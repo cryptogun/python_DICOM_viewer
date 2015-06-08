@@ -28,7 +28,43 @@ class MRI_slice:
         return value
     def get_pixel_array(self):
         dcm = dicom.read_file(self.filename,stop_before_pixels=False,force=True)
-        return dcm.pixel_array
+        
+        arr = dcm.pixel_array#.astype(scipy.float64)
+
+        # pixel_array seems to be the original, non-rescaled array.
+        # If present, window center and width refer to rescaled array
+        # -> do rescaling if possible.
+        if ('RescaleIntercept' in dcm) and ('RescaleSlope' in dcm):
+            intercept = dcm.RescaleIntercept  # single value
+            slope = dcm.RescaleSlope
+            #can be multiple value:
+            try:
+                intercept = intercept[0]
+            except:
+                pass
+            try:
+                slope = slope[0]
+            except:
+                pass
+
+            if slope == 1 and intercept == 0:
+                return arr
+            '''
+            method 1:
+            else:
+                return scipy.piecewise(arr, [arr == arr], [lambda arr: arr * slope + intercept])
+            method 2:
+            '''
+            if int(slope) !=slope or int(intercept) != intercept:
+                arr = arr.astype(scipy.float64)
+            arr *= slope
+            arr += intercept
+            if int(slope) !=slope or int(intercept) != intercept:
+                arr = arr.astype(scipy.uint16)
+            return arr
+
+        else:
+            return arr #dcm.pixel_array
     def determine_orientation(self):
         #this is working for the Philips scanner only
         #return self.get_tagvalue((0x2001,0x100b))
