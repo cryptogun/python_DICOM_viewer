@@ -6,6 +6,8 @@ import Tkinter
 from PIL import ImageTk, Image
 import tkSimpleDialog
 import tkMessageBox
+import dicom
+import numpy
 class MRI_canvas(Tkinter.Canvas):
     """
     A canvas derived from Tkinter.Canvas
@@ -59,7 +61,7 @@ class MRI_canvas(Tkinter.Canvas):
 
         self.file_name = ''
         self.seq = None
-
+        self.tags_var = Tkinter.StringVar()
         
         self.text_coors = {}#{0:[[7, [100, 100], 'hello'], [9, [200, 100], 'world']], 1:[[7, [200, 100], '第二'], [9, [300, 100], '张']]}#real
         self.texts = []#screen
@@ -69,11 +71,99 @@ class MRI_canvas(Tkinter.Canvas):
         self._bind_events()
 
 
-        self.parent.test = Tkinter.Label(self.parent, text = 'a\n \ntest!!!!!!!\nnew line',bg = 'black', fg = 'white')
+        self.parent.test = Tkinter.Label(self.parent, textvariable = self.tags_var, width = 16, bg = 'black', fg = 'white')
         #self.parent.test.pack(in_ = self, anchor = 'se')
 
-        
+    def set_array(self, array):
+        """
+        set the image data to be displayed.
+        Input:
+            array: can be 2-, 3-, and 4-dimensional scipy array
+        """
+        self.array = array
 
+        #use the same z_index value unless it is out of bound
+        if len(self.array.shape)==3:
+            if self.z_index < 0:
+                self.z_index = 0
+            elif self.z_index > self.array.shape[-3] - 1:
+                self.z_index = self.array.shape[-3] - 1
+        elif len(self.array.shape)==4:
+            if self.z_index < 0:
+                self.z_index = 0
+            elif self.z_index > self.array.shape[-3] - 1:
+                self.z_index = self.array.shape[-3] - 1
+            #check the extra dimension
+            if self.t_index == -1:
+                self.t_index = 0
+            elif self.t_index > self.array.shape[-4] - 1:
+                self.t_index = self.array.shape[-4] - 1
+
+
+        self._update_file_name()
+        self._read_file_head()
+        self._set_default_windowing()
+
+        #print "z_index = %d; t_index = %d"%(self.z_index, self.t_index)
+        self._display()
+        self._show_tags()
+        self._slice_change_event_generate()
+
+    def _update_file_name(self):
+        if self.array == '':
+            return
+
+        #print('asdf',self.seq.filen_by_slice_number)
+        if len(self.array.shape)==2:
+            try:
+                self.file_name = self.seq.files[0]
+            except AttributeError:# __main__ 'NoneType' object has no attribute 'files'
+                pass
+        elif len(self.array.shape)==3:
+            ind = self.seq.filen_by_slice_number[self.z_index]
+            self.file_name = self.seq.files[ind]
+        elif len(self.array.shape)==4:
+            ind = self.seq.filen_by_slice_number[self.z_index][self.t_index]
+            #print(ind)
+            self.file_name = self.seq.files[ind]#[self.t_index+self.z_index*self.array.shape[0]]
+
+    def _read_file_head(self):
+        self.f_head = dicom.read_file(self.file_name, stop_before_pixels=True)
+
+    def _set_default_windowing(self):
+        if self.array == '':
+            self.window_center = None
+            self.window_width = None
+            return
+        self._update_file_name()
+        self._read_file_head()
+        #array has been modified in MRI_slice.py get_pixel_array() applying RescaleIntercept and RescaleSlope.
+        #so we can use file saved wc and ww.
+        if 'WindowCenter' in self.f_head and 'WindowWidth' in self.f_head:
+            #set file saved wc and ww
+            self.window_center = self.f_head.WindowCenter
+            self.window_width = self.f_head.WindowWidth
+            #print('file saved wc ww', self.window_center, self.window_width)
+            '''
+            ####for print compare:
+            maxv = self.array.max()
+            minv = self.array.min()
+            window_center = (maxv / 2.0) + (minv / 2.0)
+            #self.window_width = maxv - minv + 1.0
+            window_width = maxv - minv
+            print('file saved wc ww', self.window_center, self.window_width)
+            print('full view calculated wc ww', window_center, window_width)
+            '''
+        else:
+            #if no found in file, calculate a full-view-image wc and ww.
+            maxv = self.array.max()
+            minv = self.array.min()
+            self.window_center = (maxv / 2.0) + (minv / 2.0)
+            #self.window_width = maxv - minv + 1.0
+            self.window_width = maxv - minv
+            #print('calculated wc ww', self.window_center, self.window_width)
+
+            #print "in _set_default_windowing: max=%f, min=%f, wc=%f, ww=%f"%(maxv,minv,self.window_center,self.window_width)
 
     def _display(self):
         """
@@ -82,28 +172,22 @@ class MRI_canvas(Tkinter.Canvas):
         #if no data has been loaded
         if self.array == '':
             return
-        
         #print(len(self.array.shape), self.z_index, self.t_index, "aaa")
         if len(self.array.shape)==2:
-            try:
-                self.file_name = self.seq.files[0]
-            except AttributeError:# __main__ 'NoneType' object has no attribute 'files'
-                pass
-            cur_image = self.array.copy()
+            cur_image = self.array#.copy()
         elif len(self.array.shape)==3:
             try:
-                cur_image = self.array[self.z_index].copy()
+                cur_image = self.array[self.z_index]#.copy()
             except:
                 print "self.z_index = %d (0 - %d)"%(self.z_index, self.array.shape[0]-1)
                 if self.z_index > self.array.shape[0]-1:
                     self.z_index = self.array.shape[0]-1
                 elif self.z_index < 0:
                     self.z_index = 0
-            cur_image = self.array[self.z_index].copy()
-            self.file_name = self.seq.files[self.z_index]
+            cur_image = self.array[self.z_index]#.copy()
         elif len(self.array.shape)==4:
             try:
-                cur_image = self.array[self.t_index, self.z_index].copy()
+                cur_image = self.array[self.t_index, self.z_index]#.copy()
             except:
                 print "self.t_index = %d; self.z_index = %d"%(self.t_index, self.z_index)
                 if self.t_index > self.array.shape[0]-1:
@@ -115,8 +199,7 @@ class MRI_canvas(Tkinter.Canvas):
                 elif self.z_index < 0:
                     self.z_index = 0
                     
-                cur_image = self.array[self.t_index, self.z_index].copy()
-            self.file_name = self.seq.files[self.t_index+self.z_index*self.array.shape[0]]
+                cur_image = self.array[self.t_index, self.z_index]#.copy()
 
         #else, calculate image gray levels according to windowing/leveling setting
         #look up table
@@ -132,6 +215,7 @@ class MRI_canvas(Tkinter.Canvas):
         
         #map image gray levels to the display gray levels
         #gray levels less than the minv or greater than the maxv values are set to those values
+        '''
         min_mask = (minv >= cur_image)
         to_scale = (cur_image > minv) & (cur_image < maxv)
         max_mask = (cur_image >= maxv)
@@ -140,10 +224,13 @@ class MRI_canvas(Tkinter.Canvas):
         if to_scale.any(): cur_image[to_scale] = ((cur_image[to_scale] - minv) /
                                                   (maxv - minv)) * lut_range + lut_min
         if max_mask.any(): cur_image[max_mask] = lut_max
-        
+        '''
+        #cur_image.shape = self.array.shape[-1]*self.array.shape[-2]
+        self.cur_image = numpy.piecewise(cur_image, [cur_image <= minv, (cur_image > minv) & (cur_image < maxv), cur_image >= maxv], [lut_min, lambda cur_image: ((cur_image - minv) / (maxv - minv)) * lut_range + lut_min, lut_max])
+        #cur_image.shape = self.array.shape[-1], self.array.shape[-2]
         #convert the image array to a PIL image
         sz = self.array.shape
-        im=Image.fromstring('L', (sz[-1], sz[-2]), cur_image.astype('b').tostring())#(sz[-1], sz[-2])
+        im=Image.fromstring('L', (sz[-1], sz[-2]), self.cur_image.astype('b').tostring())#(sz[-1], sz[-2])
         
         #resize the image if needed
         im=im.resize([int(self.zoom_factor*i+.5) for i in im.size], self.resize_filter_type)
@@ -178,7 +265,6 @@ class MRI_canvas(Tkinter.Canvas):
         #if there is an ROI
 
         #if there are contours
-        self._display_details()
         self._display_contours()
         self._display_text()
         #to force update the screen
@@ -187,21 +273,102 @@ class MRI_canvas(Tkinter.Canvas):
 
         #self.update()
 
+    def _show_tags(self, event = None):
+        try:
+            PatientName = self.f_head.PatientName
+        except:PatientName = ''
+        try:
+            PatientSex = self.f_head.PatientSex
+        except:PatientSex = ''
+        try:
+            PatientBirthDate = self.f_head.PatientBirthDate
+            try:
+                PatientBirthDate = PatientBirthDate[0:4]+' '+PatientBirthDate[4:]
+            except:pass
+        except:PatientBirthDate = ''
+        try:
+            ScanType = self.f_head.ScanType
+        except:ScanType = ''
+        try:
+            Rows = str(self.f_head.Rows)
+        except:Rows = ''
+        try:
+           Columns = str(self.f_head.Columns)
+        except:Columns = ''
 
-    def _display_details(self):
-        return
-        for oid in self.find_withtag('details'):
-            self.delete(oid)
-        scrollregion = [int(i) for i in self['scrollregion'].split(' ')]
-        #print(self['scrollregion'][2], self['scrollregion'][0])
+        self.tags_var.set(str('%6.2f '%self.zoom_factor)+Rows+'x'+Columns+'\n'+'wc: '+str('%5.f'%self.window_center)+' ww: '+str('%5.f'%self.window_width)+'\n'+PatientBirthDate+'\n'+PatientName+' '+PatientSex+'\n')
 
-        wx = self.canvasx((scrollregion[2]-scrollregion[0])*sum(self.parent.cxsb.get())/2.0)
-        wy = self.canvasy((scrollregion[3]-scrollregion[1])*sum(self.parent.cysb.get())/2.0)
-        #print(wx,wy)
-        self.create_text(wx, wy, text = self.seq.patient.name, tags = 'details', fill = 'blue')
-        #print('cysb',,sum(self.parent.cysb.get())/2.0)
-        #self.tag_raise('details')
-        #self.focus_set()
+
+    #######################################
+    #event generating and binding
+    def _slice_change_event_generate(self):
+        """
+        create a custom event that indicates the displayed image slice is changed.
+        a custom event <<Slice_Changed>> will be created after this function is returned.
+        """
+        self.event_generate("<<Slice_Changed>>",when='tail')
+    def _ROI_drawn_event_generate(self):
+        self.event_generate("<<ROI_Drawn>>",when='tail')
+    def _zoom_changed_event_generate(self):
+        self.event_generate("<<Zoom_Changed>>",when='tail')
+    def _window_level_changed_event_generate(self):
+        self.event_generate("<<Window_Level_Changed>>",when='tail')
+    def _generate_button45_on_windows(self, event):
+        scroll_line = int(event.delta / 120)
+        if scroll_line in (1, 2):
+           self.event_generate("<Button-4>", x = event.x, y = event.y)
+        elif scroll_line > 2:
+            for i in range(scroll_line - 1):
+                self.event_generate("<Button-4>", x = event.x, y = event.y)
+        elif scroll_line in (-1, -2):
+            self.event_generate("<Button-5>", x = event.x, y = event.y)
+        elif scroll_line < -2:
+            for i in range(-scroll_line - 1):
+                self.event_generate("<Button-5>", x = event.x, y = event.y)
+
+    def _bind_events(self):
+        """
+        bind events that will be handled by this class, including
+        mouse wheel forward  -> change z-axis or time location
+        mouse wheel backward -> change z-axis or time location
+        mouse right button pressed and moved -> windowing and leveling
+        mouse  left button pressed and moved -> zooming
+        widget is resized -> redraw canvas
+        """
+        self.bind('<Shift-ButtonPress-1>', self._create_text)
+
+        self.bind("<MouseWheel>", self._generate_button45_on_windows)
+        self.bind("<Button-4>", self.on_wheel_forward) #wheel forward
+        self.bind("<Button-5>", self.on_wheel_backward) #wheel backward
+
+        #ROI drawing using left mouse button and Control key
+        self.bind("<Control-ButtonPress-1>", self.on_ROI_starting)
+        self.bind("<Control-B1-Motion>", self.on_ROI_growing)
+        self.bind("<Control-ButtonRelease-1>", self.on_ROI_ending)
+        
+        #zooming or moving ROI (while captured) using left mouse button
+        self.bind("<ButtonPress-1>", self.on_mouse_left_down)
+        self.bind("<B1-Motion>", self.on_mouse_left_down_moving)
+        self.bind("<ButtonRelease-1>", self.on_mouse_left_up)
+        self.bind("<Double-1>", self.on_zoom_1)
+        
+        #changing windowing and leveling set using right mouse button
+        self.bind("<ButtonPress-3>", self.on_window_level_starting)
+        self.bind("<B3-Motion>", self.on_window_level_changing)
+        self.bind("<ButtonRelease-3>", self.on_window_level_ending)
+        self.bind("<Double-3>", self.on_default_window_level)
+
+        self.bind("<Configure>", self.on_configure)
+
+        self.bind("<ButtonPress-2>", self.button2_press)
+        self.bind("<B2-Motion>", self.button2_moving)
+        self.bind("<ButtonRelease-2>", self.button2_release)
+        self.bind("<<Slice_Changed>>", self._show_tags)
+        self.bind("<<Zoom_Changed>>", self._show_tags)#self._zoom_changed)
+        self.bind("<<Window_Level_Changed>>", self._show_tags)
+    #event generating and binding end
+    #######################################
+
 
 
     def _display_text(self):
@@ -273,117 +440,6 @@ class MRI_canvas(Tkinter.Canvas):
 
         #self._save_text _coors()
 
-
-    def _display_contours(self):
-        """
-        redraw all contours
-        """
-        #first remove existing contours
-        for oid in self.find_withtag('polygon'):
-            self.delete(oid)
-        '''
-        if len(self.contours) > 0:
-            #different colors represent different types of contours
-            for color in self.contours.keys():
-                #for each contour type, there are contours on different slices
-                for slicen in self.contours[color].keys():
-                    self.delete(self.contours[color][slicen])
-                self.contours.pop(color)
-        '''
-        if not (self.z_index in self.contour_coors):
-            return
-
-        if self.contour_coors[self.z_index] == []:
-            del self.contour_coors[self.z_index]
-        if self.contour_coors == {}:
-            return
-        for z_each_contour in self.contour_coors[self.z_index]:
-            coors = self._coor_to_screen(z_each_contour[1])
-            z_each_contour[0] = self.create_polygon(coors,fill="",outline='cyan', tags = 'polygon')
-        self.tag_raise('text')
-        
-    def set_array(self, array):
-        """
-        set the image data to be displayed.
-        Input:
-            array: can be 2-, 3-, and 4-dimensional scipy array
-        """
-        self.array = array
-        self._set_default_windowing()
-
-        #use the same z_index value unless it is out of bound
-        if len(self.array.shape)==3:
-            if self.z_index < 0:
-                self.z_index = 0
-            elif self.z_index > self.array.shape[-3] - 1:
-                self.z_index = self.array.shape[-3] - 1
-        elif len(self.array.shape)==4:
-            if self.z_index < 0:
-                self.z_index = 0
-            elif self.z_index > self.array.shape[-3] - 1:
-                self.z_index = self.array.shape[-3] - 1
-            #check the extra dimension
-            if self.t_index == -1:
-                self.t_index = 0
-            elif self.t_index > self.array.shape[-4] - 1:
-                self.t_index = self.array.shape[-4] - 1
-
-        #print "z_index = %d; t_index = %d"%(self.z_index, self.t_index)
-        self._display()
-        self._slice_change_event_generate()
-
-    '''
-    def set_contours(self, contour_coors, to_the_slice=True):
-        """
-        set a set of contours
-        """
-        self.contour_coors = contour_coors
-        if to_the_slice:
-            self.z_index = self.contour_coors.values()[0].keys()[0]
-        self._display()
-    '''
-    def clear_contours(self):
-        self.contour_coors = {}
-        self._display()
-
-    def _set_default_windowing(self):
-        if self.array == '':
-            self.window_center = None
-            self.window_width = None
-            return
-        maxv = self.array.max()
-        minv = self.array.min()
-        self.window_center = (maxv / 2.0) + (minv / 2.0)
-        #self.window_width = maxv - minv + 1.0
-        self.window_width = maxv - minv
-        #print "in _set_default_windowing: max=%f, min=%f, wc=%f, ww=%f"%(maxv,minv,self.window_center,self.window_width)
-        
-    #######################################
-    #event generating and binding
-    def _slice_change_event_generate(self):
-        """
-        create a custom event that indicates the displayed image slice is changed.
-        a custom event <<Slice_Changed>> will be created after this function is returned.
-        """
-        self.event_generate("<<Slice_Changed>>",when='tail')
-    def _ROI_drawn_event_generate(self):
-        self.event_generate("<<ROI_Drawn>>",when='tail')
-    def _zoom_changed_event_generate(self):
-        self.event_generate("<<Zoom_Changed>>",when='tail')
-    def generate_button45_on_windows(self, event):
-        scroll_line = int(event.delta / 120)
-        if scroll_line in (1, 2, 3, 4):
-           self.event_generate("<Button-4>", x = event.x, y = event.y)
-        elif scroll_line > 4:
-            for i in range(scroll_line - 3):
-                self.event_generate("<Button-4>", x = event.x, y = event.y)
-        elif scroll_line in (-1, -2, -3, -4):
-            self.event_generate("<Button-5>", x = event.x, y = event.y)
-        elif scroll_line < -4:
-            for i in range(-scroll_line - 3):
-                self.event_generate("<Button-5>", x = event.x, y = event.y)
-
-
     def OnTextButtonPress(self, event):
         '''Being drag of an object'''
         # record the item and its location
@@ -422,267 +478,47 @@ class MRI_canvas(Tkinter.Canvas):
         self.text_coors.update({self.z_index: z_text})
 
 
-    def _bind_events(self):
+    def _display_contours(self):
         """
-        bind events that will be handled by this class, including
-        mouse wheel forward  -> change z-axis or time location
-        mouse wheel backward -> change z-axis or time location
-        mouse right button pressed and moved -> windowing and leveling
-        mouse  left button pressed and moved -> zooming
-        widget is resized -> redraw canvas
+        redraw all contours
         """
-        self.bind('<Shift-ButtonPress-1>', self._create_text)
-
-        self.bind("<MouseWheel>", self.generate_button45_on_windows)
-        self.bind("<Button-4>", self.on_wheel_forward) #wheel forward
-        self.bind("<Button-5>", self.on_wheel_backward) #wheel backward
-
-        #ROI drawing using left mouse button and Control key
-        self.bind("<Control-ButtonPress-1>", self.on_ROI_starting)
-        self.bind("<Control-B1-Motion>", self.on_ROI_growing)
-        self.bind("<Control-ButtonRelease-1>", self.on_ROI_ending)
-        
-        #zooming or moving ROI (while captured) using left mouse button
-        self.bind("<ButtonPress-1>", self.on_mouse_left_down)
-        self.bind("<B1-Motion>", self.on_mouse_left_down_moving)
-        self.bind("<ButtonRelease-1>", self.on_mouse_left_up)
-        self.bind("<Double-1>", self.on_zoom_1)
-        
-        #changing windowing and leveling set using right mouse button
-        self.bind("<ButtonPress-3>", self.on_window_level_starting)
-        self.bind("<B3-Motion>", self.on_window_level_changing)
-        self.bind("<ButtonRelease-3>", self.on_window_level_ending)
-        self.bind("<Double-3>", self.on_default_window_level)
-
-        self.bind("<Configure>", self.on_configure)
-
-        self.bind("<ButtonPress-2>", self.button2_press)
-        self.bind("<B2-Motion>", self.button2_moving)
-        self.bind("<ButtonRelease-2>", self.button2_release)
-        #self.bind("<<Zoom_Changed>>", self._zoom_changed)
-    #event generating and binding end
-    #######################################
-
-
-    #######################################
-    #coordinates transferring
-    def _map_coordinates(self, coors, screen_to_image = True):
-        if screen_to_image:
-            _from_sz = [self.winfo_width(), self.winfo_height()]
-            _to_sz = [self.array.shape[-1], self.array.shape[-2]]
-            factor = 1./self.zoom_factor
-        else:
-            _to_sz = [self.winfo_width(), self.winfo_height()]
-            _from_sz = [self.array.shape[-1], self.array.shape[-2]]
-            factor = self.zoom_factor
-        n = len(coors)/2
-        #print n, coors,self.can_sz_x, self.image_size[-1]
-        re_coors = []
-        #print coors
-        for i in range(n):
-            x = (coors[i*2] - _from_sz[0]/2.0) * factor + _to_sz[0]/2.0
-            y = (coors[i*2+1] -_from_sz[1] /2.0) * factor + _to_sz[1]/2.0
-            re_coors.append(int(x+.5))
-            re_coors.append(int(y+.5))
-        return re_coors
-    def _coor_to_image(self,*coors):
-        return self._map_coordinates(coors, screen_to_image = True)
-    def _coor_to_screen(self, coors):
-        return self._map_coordinates(coors, screen_to_image = False)
-    #coordinates transferring end
-    #######################################
-
-
-    #enable to move ROI
-    def on_mouse_left_down(self, event):
-        if self.array == '':
-            return
-        #print('current',self.type('current'))
-        #if self.type('current') == "text":
-        #    self.OnTextButtonPress(event)
-        #else:
-        
-        self.focus_set()
-        #get canvas coordinates
-        cx = self.canvasx(event.x)
-        cy = self.canvasy(event.y)
-        #print "canvas coordinates = (%d, %d"%(cx, cy)
-        oid = self.find_closest(cx, cy, halo = 4)[0]
+        #first remove existing contours
+        for oid in self.find_withtag('polygon'):
+            self.delete(oid)
         '''
-        if self.text_coors.has_key(self.z_index):
-            z_text = self.text_coors[self.z_index]
-            for i in z_text:
-                if i[0] == oid:
-                    self.text_grabbed = True
-                    self.OnTextButtonPress(event)
-                    return
+        if len(self.contours) > 0:
+            #different colors represent different types of contours
+            for color in self.contours.keys():
+                #for each contour type, there are contours on different slices
+                for slicen in self.contours[color].keys():
+                    self.delete(self.contours[color][slicen])
+                self.contours.pop(color)
         '''
-
-        
-        for a in range(1):
-            #grab text
-            if self.text_coors.has_key(self.z_index) and oid in (each_text_coors[0] for each_text_coors in self.text_coors[self.z_index]):
-                self.text_grabbed = True
-                self.OnTextButtonPress(event)
-                break
-        else:
-            #grab contour
-            #print "oid = %s"%oid
-            #pprint.pprint(self.contours)
-            #print self.contours['red'].values()
-            #print oid in self.contours['red'].values()
-            if self.contour_coors.has_key(self.z_index) and \
-            oid in (each_contour[0] for each_contour in self.contour_coors[self.z_index]):
-                #print "oid(%s) is a contour!"%oid
-                self.ROI_grabbed = True
-                self.grab_ROI(event)
-                #break
-            else:
-                #grab image, zooming.
-                self.zoom_started = True
-                self.zoom_starting(event)
-
-    def on_mouse_left_down_moving(self, event):
-        if hasattr(self, 'text_grabbed'):
-            self.OnTextMotion(event)
-        else:
-            if hasattr(self, "ROI_grabbed"):
-                self.move_contour(event)
-            elif hasattr(self, "zoom_started"):
-                self.zoom_changing(event)
-            else:
-                pass
-    def on_mouse_left_up(self, event):
-        if hasattr(self, 'text_grabbed'):
-            self.OnTextButtonRelease(event)
-            del self.text_grabbed
-        else:
-            if hasattr(self, "ROI_grabbed"):
-                self.drop_contour(event)
-                del self.ROI_grabbed
-            elif hasattr(self, "zoom_started"):
-                self.zoom_ending(event)
-                del self.zoom_started
-            else:
-                pass
-        
-
-    #######################################
-    #contours and contour moving
-    def grab_ROI(self, event):
-        #self.config(cursor='hand1')
-        if self.array == '':
+        if not (self.z_index in self.contour_coors):
             return
-        self.grabbed = True
 
-        cx = self.canvasx(event.x)
-        cy = self.canvasy(event.y)
-        obj = self.find_closest(cx, cy, halo = 4)[0]
-
-        self.old_z = self.z_index
-        self._drag_data['oid'] = obj
-        self._drag_data['x'] = event.x
-        self._drag_data['y'] = event.y
-    def move_contour(self, event):
-        if hasattr(self, 'grabbed') and self.grabbed:
-            offset_x = event.x - self._drag_data['x']
-            offset_y = event.y - self._drag_data['y']
-            
-            self.move(self._drag_data["oid"], offset_x, offset_y)
-            self._drag_data['x'] = event.x
-            self._drag_data['y'] = event.y
-            
-    def drop_contour(self, event):
-        if hasattr(self, 'grabbed') and self.grabbed:
-            self.move_contour(event)
-
-            z_contours = self.contour_coors[self.old_z]
-            for z_each_contour in z_contours:
-                if z_each_contour[0] == self._drag_data["oid"]:
-
-                    z_each_contour[1] = self._map_coordinates(self.coords(self._drag_data["oid"]))
-                    break
-            if z_contours != []:
-                self.contour_coors.update({self.old_z: z_contours})
-
-            self._drag_data["oid"] = None
-            self._drag_data["x"] = 0
-            self._drag_data["y"] = 0
-            del self.grabbed
-            del self.old_z
-
-
-
-    #contours and ROI moving end
-    #######################################
-
-    
-    #######################################
-    #zoom in and out
-    #
-    def zoom_starting(self, event):
-        #if no data array is avaible, do not bother
-        if self.array == '':
+        if self.contour_coors[self.z_index] == []:
+            del self.contour_coors[self.z_index]
+        if self.contour_coors == {}:
             return
-        self.start = event
-        self.old_zoom_factor = self.zoom_factor
+        for z_each_contour in self.contour_coors[self.z_index]:
+            coors = self._coor_to_screen(z_each_contour[1])
+            z_each_contour[0] = self.create_polygon(coors,fill="",outline='cyan', tags = 'polygon')
+        self.tag_raise('text')
         
-    def zoom_changing(self, event):
-        if not hasattr(self, 'start'):
-            return
-        offy = self.start.y - float(event.y)
-        self.zoom_factor = self.old_zoom_factor + float(offy)/100
-        '''
-        #self.zoom_factor += sqrt(abs(offy))/100 * (offy/abs(offy))
-        if offy > 0:
-            #self.zoom_factor = self.old_zoom_factor * (1+float(offy)/200)
-            #self.zoom_factor += float(offy)/self.photo_image.height() *2
-        else:
-            if offy != 0:
-                #self.zoom_factor += float(offy)/self.photo_image.height() *2
-                #self.zoom_factor = self.old_zoom_factor / (1 - float(offy)/200)
-        '''
-        if self.zoom_factor <= self.min_zoom_factor:
-            self.zoom_factor = self.min_zoom_factor
-        if self.zoom_factor >= self.max_zoom_factor:
-            self.zoom_factor = self.max_zoom_factor
-            
-        self._display()
-        self._zoom_changed_event_generate()
-    def zoom_ending(self, event):
-        """
-        clean variables that used for zooming
-        """
-        if hasattr(self, 'start'):
-            del self.start
-            del self.old_zoom_factor
-    def on_zoom_1(self, event = None):
-        self.zoom_factor = 1.
-        self._display()
-        self._zoom_changed_event_generate()
-    #zoom in and out end
-    #######################################
-
     '''
-    #######################################
-    #ROI generating
-    #
-    #update 09/26/2012
-    #I add a free-hand drawing option
-    #  when self.shape is set to be -1
-    #  this option is procecced separately from other two options
-    #
-    #  except some of the below functions are changed,       # this turns out
-    #  I also add two more lines in self._dispay() funcation # to be unnecessary
-    #
-
-    def _create_ROI(self, *coors):
-        if coors != ():
-            if self.shape_index == -1:
-                self.ROI_drawn = self.create_polygon(coors, fill='',outline=self.ROI_color, tags = 'polygon')
-            else:
-                self.ROI_drawn = self.shape(*coors, outline=self.ROI_color)
+    def set_contours(self, contour_coors, to_the_slice=True):
+        """
+        set a set of contours
+        """
+        self.contour_coors = contour_coors
+        if to_the_slice:
+            self.z_index = self.contour_coors.values()[0].keys()[0]
+        self._display()
     '''
+    def clear_contours(self):
+        self.contour_coors = {}
+        self._display()
 
     def _right_click_delete_ROI(self, event):
         if self.type('current') != "polygon":
@@ -700,7 +536,8 @@ class MRI_canvas(Tkinter.Canvas):
                 del self.contour_coors[self.z_index][i]
                 self._display_contours()
 
-
+    #######################################
+    #create ROI
     def on_ROI_starting(self, event):
         if self.array == '':
             return
@@ -750,8 +587,173 @@ class MRI_canvas(Tkinter.Canvas):
 
             self._display_contours()
             return
-
     #ROI generating end
+    #######################################
+
+    #######################################
+    #move ROI
+    def grab_ROI(self, event):
+        #self.config(cursor='hand1')
+        if self.array == '':
+            return
+        self.grabbed = True
+
+        cx = self.canvasx(event.x)
+        cy = self.canvasy(event.y)
+        obj = self.find_closest(cx, cy, halo = 4)[0]
+
+        self.old_z = self.z_index
+        self._drag_data['oid'] = obj
+        self._drag_data['x'] = event.x
+        self._drag_data['y'] = event.y
+    def move_contour(self, event):
+        if hasattr(self, 'grabbed') and self.grabbed:
+            offset_x = event.x - self._drag_data['x']
+            offset_y = event.y - self._drag_data['y']
+            
+            self.move(self._drag_data["oid"], offset_x, offset_y)
+            self._drag_data['x'] = event.x
+            self._drag_data['y'] = event.y
+    def drop_contour(self, event):
+        if hasattr(self, 'grabbed') and self.grabbed:
+            self.move_contour(event)
+
+            z_contours = self.contour_coors[self.old_z]
+            for z_each_contour in z_contours:
+                if z_each_contour[0] == self._drag_data["oid"]:
+
+                    z_each_contour[1] = self._map_coordinates(self.coords(self._drag_data["oid"]))
+                    break
+            if z_contours != []:
+                self.contour_coors.update({self.old_z: z_contours})
+
+            self._drag_data["oid"] = None
+            self._drag_data["x"] = 0
+            self._drag_data["y"] = 0
+            del self.grabbed
+            del self.old_z
+
+    #contours and ROI moving end
+    #######################################
+
+    #######################################
+    #deal with mouse left. either zoom or grab.
+    def on_mouse_left_down(self, event):
+        if self.array == '':
+            return
+        #print('current',self.type('current'))
+        #if self.type('current') == "text":
+        #    self.OnTextButtonPress(event)
+        #else:
+        
+        self.focus_set()
+        #get canvas coordinates
+        cx = self.canvasx(event.x)
+        cy = self.canvasy(event.y)
+        #print "canvas coordinates = (%d, %d"%(cx, cy)
+        oid = self.find_closest(cx, cy, halo = 4)[0]
+        '''
+        if self.text_coors.has_key(self.z_index):
+            z_text = self.text_coors[self.z_index]
+            for i in z_text:
+                if i[0] == oid:
+                    self.text_grabbed = True
+                    self.OnTextButtonPress(event)
+                    return
+        '''
+
+        
+        for a in range(1):
+            #grab text
+            if self.text_coors.has_key(self.z_index) and oid in (each_text_coors[0] for each_text_coors in self.text_coors[self.z_index]):
+                self.text_grabbed = True
+                self.OnTextButtonPress(event)
+                break
+        else:
+            #grab contour
+            #print "oid = %s"%oid
+            #pprint.pprint(self.contours)
+            #print self.contours['red'].values()
+            #print oid in self.contours['red'].values()
+            if self.contour_coors.has_key(self.z_index) and \
+            oid in (each_contour[0] for each_contour in self.contour_coors[self.z_index]):
+                #print "oid(%s) is a contour!"%oid
+                self.ROI_grabbed = True
+                self.grab_ROI(event)
+                #break
+            else:
+                #grab image, zooming.
+                self.zoom_started = True
+                self.zoom_starting(event)
+    def on_mouse_left_down_moving(self, event):
+        if hasattr(self, 'text_grabbed'):
+            self.OnTextMotion(event)
+        else:
+            if hasattr(self, "ROI_grabbed"):
+                self.move_contour(event)
+            elif hasattr(self, "zoom_started"):
+                self.zoom_changing(event)
+            else:
+                pass
+    def on_mouse_left_up(self, event):
+        if hasattr(self, 'text_grabbed'):
+            self.OnTextButtonRelease(event)
+            del self.text_grabbed
+        else:
+            if hasattr(self, "ROI_grabbed"):
+                self.drop_contour(event)
+                del self.ROI_grabbed
+            elif hasattr(self, "zoom_started"):
+                self.zoom_ending(event)
+                del self.zoom_started
+            else:
+                pass
+    #mouse left event functions end
+    #######################################
+
+    
+    #######################################
+    #zoom in and out
+    def zoom_starting(self, event):
+        #if no data array is avaible, do not bother
+        if self.array == '':
+            return
+        self.start = event
+        self.old_zoom_factor = self.zoom_factor
+    def zoom_changing(self, event):
+        if not hasattr(self, 'start'):
+            return
+        offy = self.start.y - float(event.y)
+        self.zoom_factor = self.old_zoom_factor + float(offy)/100
+        '''
+        #self.zoom_factor += sqrt(abs(offy))/100 * (offy/abs(offy))
+        if offy > 0:
+            #self.zoom_factor = self.old_zoom_factor * (1+float(offy)/200)
+            #self.zoom_factor += float(offy)/self.photo_image.height() *2
+        else:
+            if offy != 0:
+                #self.zoom_factor += float(offy)/self.photo_image.height() *2
+                #self.zoom_factor = self.old_zoom_factor / (1 - float(offy)/200)
+        '''
+        if self.zoom_factor <= self.min_zoom_factor:
+            self.zoom_factor = self.min_zoom_factor
+        if self.zoom_factor >= self.max_zoom_factor:
+            self.zoom_factor = self.max_zoom_factor
+            
+        self._display()
+        self._zoom_changed_event_generate()
+    def zoom_ending(self, event):
+        """
+        clean variables that used for zooming
+        """
+        if hasattr(self, 'start'):
+            del self.start
+            del self.old_zoom_factor
+    def on_zoom_1(self, event = None):
+        self.zoom_factor = 1.
+        self._display()
+        self._zoom_changed_event_generate()
+    #zoom in and out end
     #######################################
 
     
@@ -777,6 +779,9 @@ class MRI_canvas(Tkinter.Canvas):
         
         self.window_center = self.old_wc+float(offx)*self.range_factor
         self.window_width = self.old_ww+float(offy)*self.range_factor*2
+        if self.window_width<1:
+            self.window_width = 1
+        self._window_level_changed_event_generate()
         self._display()
     def on_window_level_ending(self, event):
         #clean up
@@ -788,13 +793,13 @@ class MRI_canvas(Tkinter.Canvas):
     def on_default_window_level(self, event):
         self._set_default_windowing()
         self._display()
+        self._show_tags()
     #windowing and leveling end
     #######################################
     
-    def on_configure(self, event):
-        #if the widget is resized
-        #redraw the image
-        self._display()
+
+    #######################################
+    #wheel event scrolling
     def on_wheel_backward(self,event):
         self._scroll_slice(event, down=False)
     def on_wheel_forward(self, event):
@@ -817,7 +822,6 @@ class MRI_canvas(Tkinter.Canvas):
                 self._scroll(z=True, down=down)
             else:
                 self._scroll(z=False, down=down)
-
     def _scroll(self, z=True, down=True):
         change = True
         #print(z,'z or t')
@@ -844,10 +848,17 @@ class MRI_canvas(Tkinter.Canvas):
                 else:
                     change = False
         if change:
+            self._read_file_head()
+            self._set_default_windowing()
             self._display()
             self._slice_change_event_generate()
+    #scrolling end
+    #######################################
 
 
+
+    #######################################
+    #measure distance start
     def button2_press(self, event):
         if self.array == '':
             return
@@ -869,29 +880,86 @@ class MRI_canvas(Tkinter.Canvas):
             self.delete(oid)
         measure_line = self.create_line(self.canvasx(self.measure_event.x), self.canvasy(self.measure_event.y), self.canvasx(event.x), self.canvasy(event.y), fill = 'green', tags = 'finalline')
         self.pointb = self._coor_to_image(self.canvasx(event.x), self.canvasy(event.y))
-        import dicom
-        f = dicom.read_file(self.file_name, stop_before_pixels=True)
-        spacing_xy = f[0x0028, 0x0030].value
+
+        try:
+            spacing_xy = self.f_head[0x0028, 0x0030].value
+        except KeyError:
+            print('KeyError. Pixel spacing value not found. Distance = 0.00mm.\n')
+            spacing_xy = [0, 0]
         if (self.angle / 90 % 2):
             #if True, by _coor_to_image pointa and pointb were wrong. Todo: rotate polygon and text.
             spacing_xy = spacing_xy[::-1]
             #and wrong again manualy, wrong x wrong = right.
             
-        import numpy
-        self.distance = numpy.sqrt(((self.pointa[0]-self.pointb[0])*spacing_xy[0])**2+((self.pointa[1]-self.pointb[1])*spacing_xy[1])**2)
+        #import numpy.sqrt
+        self.distance = (((self.pointa[0]-self.pointb[0])*spacing_xy[0])**2+((self.pointa[1]-self.pointb[1])*spacing_xy[1])**2)**0.5
 
         measure_text = self.create_text(self.canvasx(event.x)+10, self.canvasy(event.y)+10, text = str('%.2f' %self.distance)+'mm', fill = 'red', tags = 'finalline')
         def vanish():
             for oid in self.find_withtag('finalline'):
                 self.delete(oid)
-        self.after(5000, vanish)
+        self.after(3000, vanish)
 
         del self.measure_event
+    #measure distance end
+    #######################################
 
 
+    ########window resize.#########
+    def on_configure(self, event):
+        #if the widget is resized
+        #redraw the image
+        self._display()
+
+    #######################################
+    #coordinates transferring
+    def _map_coordinates(self, coors, screen_to_image = True):
+        if screen_to_image:
+            _from_sz = [self.winfo_width(), self.winfo_height()]
+            _to_sz = [self.array.shape[-1], self.array.shape[-2]]
+            factor = 1./self.zoom_factor
+        else:
+            _to_sz = [self.winfo_width(), self.winfo_height()]
+            _from_sz = [self.array.shape[-1], self.array.shape[-2]]
+            factor = self.zoom_factor
+        n = len(coors)/2
+        #print n, coors,self.can_sz_x, self.image_size[-1]
+        re_coors = []
+        #print coors
+        for i in range(n):
+            x = (coors[i*2] - _from_sz[0]/2.0) * factor + _to_sz[0]/2.0
+            y = (coors[i*2+1] -_from_sz[1] /2.0) * factor + _to_sz[1]/2.0
+            re_coors.append(int(x+.5))
+            re_coors.append(int(y+.5))
+        return re_coors
+    def _coor_to_image(self,*coors):
+        return self._map_coordinates(coors, screen_to_image = True)
+    def _coor_to_screen(self, coors):
+        return self._map_coordinates(coors, screen_to_image = False)
+    #coordinates transferring end
+    #######################################
 
 
+    '''
+    #######################################
+    #ROI generating
+    #
+    #update 09/26/2012
+    #I add a free-hand drawing option
+    #  when self.shape is set to be -1
+    #  this option is procecced separately from other two options
+    #
+    #  except some of the below functions are changed,       # this turns out
+    #  I also add two more lines in self._dispay() funcation # to be unnecessary
+    #
 
+    def _create_ROI(self, *coors):
+        if coors != ():
+            if self.shape_index == -1:
+                self.ROI_drawn = self.create_polygon(coors, fill='',outline=self.ROI_color, tags = 'polygon')
+            else:
+                self.ROI_drawn = self.shape(*coors, outline=self.ROI_color)
+    '''
 
 
 
