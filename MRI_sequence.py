@@ -147,7 +147,9 @@ class MRI_sequence:
         data = data[inds]
         self.data = data
         """
+        self.breakloop = False
         is_4D, data, keys = self._get_pixel_array_4D(skip_pixel_array=False)
+        del self.breakloop
         self.data = data
 
     def merge_with(self, other):
@@ -179,7 +181,7 @@ class MRI_sequence:
                 identical_value[key] = tag_dict[key][0]
         return identical_value, multiple_values
 
-    def _get_pixel_array_4D(self, is_DCE_sequence=True, skip_pixel_array=False):
+    def _get_pixel_array_4D(self, is_DCE_sequence=False, skip_pixel_array=False):
         self.DCE_seq = is_DCE_sequence
         self.is_4D = True
         def _get_space_key(slc):
@@ -305,17 +307,20 @@ class MRI_sequence:
         #print len(z)
         
         if n_t == 1:
+
             #double check if this is not 4D data
             if n_z != len(z):
-                return self._get_pixel_array_4D(is_DCE_sequence=not is_DCE_sequence,
-                                                skip_pixel_array=skip_pixel_array)
+                if self.breakloop == False:
+                    self.breakloop = True
+                    return self._get_pixel_array_4D(is_DCE_sequence=not is_DCE_sequence,
+                                                        skip_pixel_array=skip_pixel_array)
+                else:return None
 
         if not skip_pixel_array:
             data = scipy.array(data)
             #print data.shape
             #print ind, t, z, instancens
             #print self.directory
-        
             #have to convert tuple into list to make it work as an index
             data = data[list(ind)]
 
@@ -475,9 +480,17 @@ class MRI_sequence:
                 if os.path.isdir(os.path.join(self.directory,f)):pass
                 else:
                     try:
-                        dicom.read_file(os.path.join(self.directory,f))
-                        self.files.append(os.path.join(self.directory,f))
-                    except dicom.filereader.InvalidDicomError:
+                        if self.files != []:
+                            dcm = dicom.read_file(os.path.join(self.directory,f), stop_before_pixels = True)
+                            if dcm.Rows == dcm0.Rows and dcm.Columns == dcm0.Columns:
+                                #AttributeError: Dataset does not have attribute 'Rows'.
+                                self.files.append(os.path.join(self.directory,f))
+                        else:
+                            dcm = dicom.read_file(os.path.join(self.directory,f), stop_before_pixels = True)
+                            self.files.append(os.path.join(self.directory,f))
+                            dcm0 = dcm #dicom.read_file(os.path.join(self.directory,self.files[0]))
+
+                    except:# dicom.filereader.InvalidDicomError:
                         continue
 
     def get_pID(self):
