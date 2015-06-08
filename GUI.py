@@ -20,24 +20,58 @@ class Settings:
     Read configure info from settings.ini.
     """
     def __init__(self):
-        self.lang = ''
         self._read_ini()
-        self._get_language()
+
     def _read_ini(self):
         self.config = ConfigParser.ConfigParser()
         self.config.read('settings.ini')
-    def _get_language(self):
+
+    def get_language(self):
         try:
-            self.lang = self.config.get('Languages', 'language')
+            return self.config.get('Languages', 'language')
         except:
-            self.lang = 'English'
+            return 'English'
+
+    def set_language(self, string):
+        """
+        Change interface language.
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Languages'):
+                self.config.add_section('Languages')
+            self.config.set('Languages', 'language', string.encode('utf-8'))
+            self.config.write(configfile)
+
+    def get_directory(self):
+        try:
+            return self.config.get('Initial Directory', 'directory')
+        except:
+            return '/'
+
+
+    def set_directory(self, string):
+        """
+        Set initial directory.
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Initial Directory'):
+                self.config.add_section('Initial Directory')
+            self.config.set('Initial Directory', 'directory', string.encode('utf-8'))
+            self.config.write(configfile)
+
+
+
 settings = Settings()
+
+
 def _(string):
     """
     Return meaning string show on preset language. Need shoten meaning string.
     """
     try:
-        return languages.table[settings.lang][string]
+        return languages.table[settings.get_language()][string]
     except KeyError:
         #if string not found in table
         return "x: " + string
@@ -255,7 +289,7 @@ class App:
         self.settings = settings
         #deal with close. 'x' clicked on purpose or unintentionally.
         self.master.protocol('WM_DELETE_WINDOW', self.SafeExit) 
-        self.browse_abspath = 'D:\\pydicom viewer\\pydicom\\anonymized_data_08272014\\000005'
+        self.browse_abspath = settings.get_directory() #'D:\\pydicom viewer\\pydicom\\anonymized_data_08272014\\000005'
 
         self._customize_window()
         self.main()
@@ -277,6 +311,8 @@ class App:
         """
         Change interface language.
         """
+        self.settings.set_language(string)
+        '''
         config = self.settings.config
         string = string.decode('utf-8')
         with open('settings.ini', 'w') as configfile:
@@ -284,7 +320,15 @@ class App:
                 config.add_section('Languages')
             config.set('Languages', 'language', string.encode('utf-8'))
             config.write(configfile)
-            tkMessageBox.showinfo(string + " selected.", "Restart required to apply changes.")
+        '''
+        tkMessageBox.showinfo(string + " selected.", "Restart required to apply changes.")
+
+    def set_dir(self):
+        path = tkFileDialog.askdirectory(initialdir = self.settings.get_directory())
+        if path == '':
+            return
+
+        self.settings.set_directory(path)
 
     def open_file(self, abspath = ''):
         """
@@ -326,7 +370,7 @@ class App:
 
             #c.pack(fill = 'both', expand = 1)
            
-            self.showbox.test.pack(in_ = self.c, padx = 10, pady = 10, anchor = 'se')#, anchor = 'nw', side = 'left'
+            self.showbox.test.pack(in_ = self.c, padx = 4, pady = 4, anchor = 'se')#, anchor = 'nw', side = 'left'
 
         #if it is an invalid DICOM file.
         except dicom.filereader.InvalidDicomError:
@@ -366,6 +410,10 @@ class App:
         self.showbox.cxsb.pack(in_ = self.c, expand = 1, anchor = 'n')
 
         self.showbox.test.pack(in_ = self.c, padx = 10, pady = 10, anchor = 'se')#, anchor = 'nw', side = 'left'
+
+    def close_file_s(self):
+        for child in self.showbox.winfo_children():
+            child.destroy()
 
 
     def save_file(self):
@@ -427,7 +475,7 @@ class App:
         #c=showbox.nametowidget('show_canvas')
         if self.c.array == '':
             return
-        dst = tkFileDialog.asksaveasfilename(defaultextension = 'bmp', filetypes = [('bmp files', '.bmp'), ('jpeg files', '.jpg'), ('png files', '.png'), ('gif files', '.gif'), ('photo shop files', '.ps'), ('all files', '.*')])
+        dst = tkFileDialog.asksaveasfilename(defaultextension = '.bmp', filetypes = [('bmp files', '.bmp'), ('jpeg files', '.jpg'), ('png files', '.png'), ('gif files', '.gif'), ('photo shop files', '.ps'), ('all files', '.*')])
         if dst == '':
             return
         ext = os.path.splitext(dst)[1]
@@ -696,6 +744,7 @@ class App:
     def _bind_events(self):
         self.master.bind_all('<Control-o>', lambda event: self.open_file())
         self.master.bind_all('<Control-p>', lambda event: self.open_series())
+        self.master.bind_all('<Control-w>', lambda event: self.close_file_s())
         self.dir_entry.bind("<Return>", lambda event: self.entry_get_dir())
 
 
@@ -732,7 +781,8 @@ class App:
             self.image_menu = tk.Menu(self.menubar, tearoff = 0)#4
             self.ROI_menu = tk.Menu(self.menubar, tearoff = 0)#5
             self.measure_menu = tk.Menu(self.menubar, tearoff = 0)#6
-            self.help_menu = tk.Menu(self.menubar, tearoff = 0)#7
+            self.settings_menu = tk.Menu(self.menubar, tearoff = 0)#7
+            self.help_menu = tk.Menu(self.menubar, tearoff = 0)#8
 
             self.menubar.add_cascade(label = _('m_file'), menu = self.file_menu)#1
             self.menubar.add_cascade(label = _('m_edit'), menu = self.edit_menu)#2
@@ -740,12 +790,14 @@ class App:
             self.menubar.add_cascade(label = _('m_image'), menu = self.image_menu)#4
             self.menubar.add_cascade(label = _('m_ROI'), menu = self.ROI_menu)#5
             self.menubar.add_cascade(label = _('m_measure'), menu = self.measure_menu)#6
-            self.menubar.add_cascade(label = _('m_help'), menu = self.help_menu)#7
+            self.menubar.add_cascade(label = _('m_setting'), menu = self.settings_menu)#7
+            self.menubar.add_cascade(label = _('m_help'), menu = self.help_menu)#8
         _add_main_menu()
         #-------------------------------------------------------
         def _file_menu():
             self.file_menu.add_command(label = _('m_open_single'), command = self.open_file, accelerator = 'Ctrl+o')
             self.file_menu.add_command(label = _('m_open_series'), command = self.open_series, accelerator = 'Ctrl+p')
+            self.file_menu.add_command(label = _('m_close_file_s'), command = self.close_file_s, accelerator = 'Ctrl+w')
             self.file_menu.add_separator()
             self.file_menu.add_command(label = _('m_save_as'), command = self.save_file)
             self.file_menu.add_command(label = _('m_convert_as'), command = self.convert_bmp)
@@ -821,11 +873,19 @@ class App:
             self.measure_menu.add_command(label = _('m_size'), command = False, state = 'disabled')
             self.measure_menu.add_command(label = _('m_stat_in_ROI'), command = False, state = 'disabled')
         #-------------------------------------------------------
+        def _setting_menu():
+            self.settings_menu.add_cascade(label = _('m_change_language'), menu = self.help_lang_menu)
+            self.settings_menu.add_command(label = _('m_set_dir'), command = self.set_dir)
+
+
+
+
+        #-------------------------------------------------------
         def _help_menu():
             self.help_lang_menu = tk.Menu(self.help_menu, tearoff = 0)
             self.help_menu.add_cascade(label = 'Change language:', menu = self.help_lang_menu)
             self.lang_var = tk.StringVar()
-            self.lang_var.set(self.settings.lang)
+            self.lang_var.set(self.settings.get_language())
             for i in languages.languages:
                 self.help_lang_menu.add_radiobutton(label = i, command = lambda i=i : self.set_lang(i), variable = self.lang_var, value = i)
 
@@ -840,6 +900,7 @@ class App:
         _ROI_menu()
         _measure_menu()
         _help_menu()
+        _setting_menu()
 
         #############################################################
         #Deal with sidebar:
