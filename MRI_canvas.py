@@ -8,6 +8,122 @@ import tkSimpleDialog
 import tkMessageBox
 import dicom
 import numpy
+
+import ConfigParser
+from tkColorChooser import askcolor
+class Settings:
+    """
+    Read configure info from settings.ini.
+    """
+    def __init__(self):
+        self._read_ini()
+
+    def _read_ini(self):
+        self.config = ConfigParser.ConfigParser()
+        try:
+            self.config.read('settings.ini')
+        except ConfigParser.MissingSectionHeaderError:
+            #BOM in utf-8 file.
+            from StringIO import StringIO
+            with open('settings.ini', 'rb') as f:
+                content = f.read().decode('utf-8-sig').encode('utf8')
+                self.config.readfp(StringIO(content))
+
+    def get_contour_color(self):
+        """
+
+        """
+        try:
+            return self.config.get('Colors', 'contour color')
+        except:
+            return 'cyan'
+
+
+    def set_contour_color(self, string):
+        """
+
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Colors'):
+                self.config.add_section('Colors')
+            self.config.set('Colors', 'contour color', string.encode('utf-8'))
+            self.config.write(configfile)
+
+    def get_text_color(self):
+        """
+
+        """
+        try:
+            color = self.config.get('Colors', 'text color')
+            if color.startswith('#'):
+                return color
+            else:
+                return 'green'
+        except:
+            return 'green'
+
+
+    def set_text_color(self, string):
+        """
+
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Colors'):
+                self.config.add_section('Colors')
+            self.config.set('Colors', 'text color', string.encode('utf-8'))
+            self.config.write(configfile)
+
+    def get_resize_filter_type(self):
+        """
+
+        """
+        try:
+            type_int = int(self.config.get('Resize Filter Type', 'type'))
+            if type_int in (0, 1, 2, 3):
+                return type_int
+            else:
+                return 0
+        except:
+            return 0
+
+
+    def set_resize_filter_type(self, string):
+        """
+
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Resize Filter Type'):
+                self.config.add_section('Resize Filter Type')
+            self.config.set('Resize Filter Type', 'type', string.encode('utf-8'))
+            self.config.write(configfile)
+
+
+    def get_min_max_zoomfactor(self):
+        """
+
+        """
+        try:
+            min_max = self.config.get('Min Max Zoom Factor', 'min max').split(' ')
+            min_max = [float(i) for i in min_max]
+            return min_max
+        except:
+            return [0.05, 6.0]
+
+
+    def set_min_max_zoomfactor(self, string):
+        """
+
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Min Max Zoom Factor'):
+                self.config.add_section('Min Max Zoom Factor')
+            self.config.set('Min Max Zoom Factor', 'min max', string.encode('utf-8'))
+            self.config.write(configfile)
+
 class MRI_canvas(Tkinter.Canvas):
     """
     A canvas derived from Tkinter.Canvas
@@ -15,15 +131,15 @@ class MRI_canvas(Tkinter.Canvas):
     def __init__(self, parent, *args, **kw):
         Tkinter.Canvas.__init__(self, parent, *args, **kw)
         self.parent = parent
+        self.settings = Settings()
         self.array = ''
         self.z_index = -1
         self.t_index = -1
-
         #options that can cause different behaviours
         #
         
         #methods for image resize 
-        self.resize_filter_type = 0
+        self.resize_filter_type = self.settings.get_resize_filter_type()
         #NEAREST = 0
         #ANTIALIAS = 1 # 3-lobed lanczos
         #LINEAR = BILINEAR = 2
@@ -34,16 +150,19 @@ class MRI_canvas(Tkinter.Canvas):
         #  see below to learn other options
         self.shape_index = -1
         #minimum and maximum zoom factors
-        self.min_zoom_factor = .05
-        self.max_zoom_factor = 6.
+        self.min_zoom_factor = self.settings.get_min_max_zoomfactor()[0] #.05
+        self.max_zoom_factor = self.settings.get_min_max_zoomfactor()[1] #6.
 
         #ROI drawing methods
-        self.object_kinds = [self.create_oval,
-                             self.create_rectangle]
-        if self.shape_index != -1:
-            self.shape = self.object_kinds[self.shape_index]
+        #self.object_kinds = [self.create_oval,
+        #                     self.create_rectangle]
+        #if self.shape_index != -1:
+        #    self.shape = self.object_kinds[self.shape_index]
 
-        self.ROI_color = 'cyan'
+        self.contour_color = self.settings.get_contour_color()
+        self.text_color = self.settings.get_text_color()
+
+        #self.ROI_color = 'cyan'
         self.multiple_ROIs = True#False
 
         self.zoom_factor = 1.
@@ -56,7 +175,7 @@ class MRI_canvas(Tkinter.Canvas):
         #contours
         self.contour_coors = {}#{0: [[20, [100, 100, 200, 200, 100, 200]], [30, [300, 300, 400, 400, 400, 300]]]}#real
 
-        self.movable_colors = ('yellow', 'green', self.ROI_color)
+        #self.movable_colors = ('yellow', 'green', self.ROI_color)
         
 
         self.file_name = ''
@@ -73,6 +192,18 @@ class MRI_canvas(Tkinter.Canvas):
 
         self.parent.test = Tkinter.Label(self.parent, textvariable = self.tags_var, width = 16, bg = 'black', fg = 'white')
         #self.parent.test.pack(in_ = self, anchor = 'se')
+
+
+    #settings:
+    def set_resize_filter_type(self, type_int):
+        self.resize_filter_type = type_int
+        self.settings.set_resize_filter_type(str(type_int))
+
+    def set_min_max_zoomfactor(self, min_max):
+        self.min_zoom_factor = min_max[0]
+        self.min_zoom_factor = min_max[1]
+        string = str(min_max[0]) + ' ' + str(min_max[1])
+        self.settings.set_min_max_zoomfactor(string)
 
     def set_array(self, array):
         """
@@ -369,7 +500,11 @@ class MRI_canvas(Tkinter.Canvas):
     #event generating and binding end
     #######################################
 
+    def set_text_color(self):
+        self.text_color = askcolor()[1]
 
+        self._display_text()
+        self.settings.set_text_color(self.text_color)
 
     def _display_text(self):
         for oid in self.find_withtag('text'):
@@ -380,7 +515,7 @@ class MRI_canvas(Tkinter.Canvas):
 
         for i in self.text_coors[self.z_index]:
             screen_coors = self._map_coordinates(i[1], screen_to_image = False)
-            i[0] = self.create_text(screen_coors, text = i[2], tags = 'text', font = ('TimesNewRoman', 12), fill = 'green', anchor = 'nw')
+            i[0] = self.create_text(screen_coors, text = i[2], tags = 'text', font = ('TimesNewRoman', 12), fill = self.text_color, anchor = 'nw')
         self.tag_raise('text')
 
     def _create_text(self, event):
@@ -394,7 +529,7 @@ class MRI_canvas(Tkinter.Canvas):
         if has_character:
             cx = self.canvasx(event.x)
             cy = self.canvasy(event.y)
-            oid = self.create_text(cx, cy, text = text, tags = 'text', font = ('TimesNewRoman', 12), fill = 'green', anchor = 'nw')
+            oid = self.create_text(cx, cy, text = text, tags = 'text', font = ('TimesNewRoman', 12), fill = self.text_color, anchor = 'nw')
             #self._save text coors
             if not (self.z_index in self.text_coors):
                 self.text_coors.update({self.z_index: []})
@@ -478,6 +613,11 @@ class MRI_canvas(Tkinter.Canvas):
         self.text_coors.update({self.z_index: z_text})
 
 
+    def set_contour_color(self):
+        self.contour_color = askcolor()[1]
+        self._display_contours()
+        self.settings.set_contour_color(self.contour_color)
+
     def _display_contours(self):
         """
         redraw all contours
@@ -503,7 +643,7 @@ class MRI_canvas(Tkinter.Canvas):
             return
         for z_each_contour in self.contour_coors[self.z_index]:
             coors = self._coor_to_screen(z_each_contour[1])
-            z_each_contour[0] = self.create_polygon(coors,fill="",outline='cyan', tags = 'polygon')
+            z_each_contour[0] = self.create_polygon(coors,fill="",outline=self.contour_color, tags = 'polygon')
         self.tag_raise('text')
         
     '''
@@ -553,7 +693,7 @@ class MRI_canvas(Tkinter.Canvas):
                                               self.canvasy(self.start.y),
                                               self.canvasx(event.x),
                                               self.canvasy(event.y),
-                                              fill = 'cyan',
+                                              fill = self.contour_color,
                                               tag='line')
             self.start = event
             self.freehand_coors.append(self.canvasx(event.x))
@@ -578,7 +718,7 @@ class MRI_canvas(Tkinter.Canvas):
             self.freehand_coors.append(self.canvasx(event.x))
             self.freehand_coors.append(self.canvasy(event.y))
             #add it to contours
-            oid = self.create_polygon(self.freehand_coors,fill="",outline='cyan', tags = 'polygon')
+            oid = self.create_polygon(self.freehand_coors,fill="",outline=self.contour_color, tags = 'polygon')
             #print([oid, new_ROI_coors])
             if not self.z_index in self.contour_coors:
                 self.contour_coors[self.z_index] = []
@@ -735,9 +875,9 @@ class MRI_canvas(Tkinter.Canvas):
                 #self.zoom_factor += float(offy)/self.photo_image.height() *2
                 #self.zoom_factor = self.old_zoom_factor / (1 - float(offy)/200)
         '''
-        if self.zoom_factor <= self.min_zoom_factor:
+        if self.zoom_factor < self.min_zoom_factor:
             self.zoom_factor = self.min_zoom_factor
-        if self.zoom_factor >= self.max_zoom_factor:
+        if self.zoom_factor > self.max_zoom_factor:
             self.zoom_factor = self.max_zoom_factor
             
         self._display()
