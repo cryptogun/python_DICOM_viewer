@@ -5,6 +5,7 @@ import Tkinter as tk#gui.
 import ttk#themed Tkinter.
 import tkMessageBox#pop up message.
 import tkFileDialog#pop up 'ask open file dialog'.
+import tkSimpleDialog#ask input ratio.
 
 import os#os name, seperator, isdir, listdir etc.
 import ConfigParser#read and save configure.
@@ -24,7 +25,14 @@ class Settings:
 
     def _read_ini(self):
         self.config = ConfigParser.ConfigParser()
-        self.config.read('settings.ini')
+        try:
+            self.config.read('settings.ini')
+        except ConfigParser.MissingSectionHeaderError:
+            #BOM in utf-8 file.
+            from StringIO import StringIO
+            with open('settings.ini', 'rb') as f:
+                content = f.read().decode('utf-8-sig').encode('utf8')
+                self.config.readfp(StringIO(content))
 
     def get_language(self):
         try:
@@ -49,7 +57,6 @@ class Settings:
         except:
             return '/'
 
-
     def set_directory(self, string):
         """
         Set initial directory.
@@ -62,6 +69,96 @@ class Settings:
             self.config.write(configfile)
 
 
+    def get_window_size(self):
+        """
+        Get window size.
+        """
+        try:
+            return self.config.get('Window Size', 'wxh')
+        except:
+            return '700x500'
+
+
+    def set_window_size(self, string):
+        """
+        Set initial directory.
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Window Size'):
+                self.config.add_section('Window Size')
+            self.config.set('Window Size', 'wxh', string.encode('utf-8'))
+            self.config.write(configfile)
+
+
+    def get_paned_ratio(self):
+        """
+
+        """
+        try:
+            string = self.config.get('Paned Windows Ratio', 'ratio').replace('：', ':')
+            return map(int, string.split(':'))
+        except:
+            return (1, 6)
+
+
+
+    def set_paned_ratio(self, string):
+        """
+
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Paned Windows Ratio'):
+                self.config.add_section('Paned Windows Ratio')
+            self.config.set('Paned Windows Ratio', 'ratio', string.encode('utf-8'))
+            self.config.write(configfile)
+
+
+    def get_sidebar_max_lines(self):
+        """
+
+        """
+        try:
+            return int(self.config.get('Sidebar Max Lines', 'lines'))
+        except:
+            return 29
+
+
+    def set_sidebar_max_lines(self, string):
+        """
+
+        """
+        string = string.decode('utf-8')
+        with open('settings.ini', 'w') as configfile:
+            if not self.config.has_section('Sidebar Max Lines'):
+                self.config.add_section('Sidebar Max Lines')
+            self.config.set('Sidebar Max Lines', 'lines', string.encode('utf-8'))
+            self.config.write(configfile)
+
+    def get_resize_filter_type(self):
+        """
+
+        """
+        try:
+            type_int = int(self.config.get('Resize Filter Type', 'type'))
+            if type_int in (0, 1, 2, 3):
+                return type_int
+            else:
+                return 0
+        except:
+            return 0
+
+    def get_min_max_zoomfactor(self):
+        """
+
+        """
+        try:
+            min_max = self.config.get('Min Max Zoom Factor', 'min max').split(' ')
+            min_max = [float(i) for i in min_max]
+            return min_max
+        except:
+            return [0.05, 6.0]
 
 settings = Settings()
 
@@ -117,8 +214,7 @@ class Dir_frame(tk.Frame):
 
 
     def dir_frame_view(self):
-        self.tree = ttk.Treeview(self, show = 'tree', height = self.master.winfo_height() / 22)
-
+        self.tree = ttk.Treeview(self, show = 'tree', height = settings.get_sidebar_max_lines())#self.master.winfo_height() / 22
         self.ysb = ttk.Scrollbar(self, orient='vertical', command=self.tree.yview)
         self.xsb = ttk.Scrollbar(self, orient='horizontal', command=self.tree.xview)
         self.tree.configure(yscroll=self.ysb.set, xscroll=self.xsb.set)
@@ -259,21 +355,23 @@ class Slide_show_ctrl_window:
     def _press_pause(self):
 
         self.pause = not self.pause
-        if self.button_pause['text'] == 'start':
-            self.button_pause['text'] = 'pause'
+        #if self.button_pause['text'] == unicode(_('Start').decode('utf-8')):
+        #encoding and decoding are too slow and causing un even switching time.
+        if self.button_pause['text'] == 'Start':
+            self.button_pause['text'] = 'Pause'
         else:
-            self.button_pause['text'] = 'start'
+            self.button_pause['text'] = 'Start'
         self.master.after(int(1000 * self.scale.get()), self._play)
 
 
     def _ctrl_window(self):
         self.top_level = tk.Toplevel()
-        self.top_level.title('Slide show')
+        self.top_level.title(_('Slide show'))
         self.top_level.wm_attributes('-topmost', True)
-        self.scale = tk.Scale(self.top_level, from_ = 0.1, to = 1.1, resolution = 0.1, label='Speed:', tickinterval=1, orient='horizontal')
+        self.scale = tk.Scale(self.top_level, from_ = 0.1, to = 1.1, resolution = 0.1, label=_('Speed:'), tickinterval=1, orient='horizontal')
         self.scale.set(0.5)
         self.button_left = tk.Button(self.top_level, text = '<<', command = self._press_left)
-        self.button_pause = tk.Button(self.top_level, text = 'start', command = self._press_pause, width = 5)
+        self.button_pause = tk.Button(self.top_level, text = 'Start', command = self._press_pause, width = 5)
         self.button_right = tk.Button(self.top_level, text = '>>', command = self._press_right)
 
         self.scale.grid(row = 0, column = 0, columnspan = 3)
@@ -299,6 +397,11 @@ class App:
         """
         Save changes before exit.
         """
+        if self.c.contour_coors or self.c.text_coors:
+            save = tkMessageBox.askyesno(_('TT_Save_ROI_before'),_('MES_Save_ROI_before'))
+            if save:
+                self.save_ROI()
+
         root.destroy()##todo
 
     def _platform(self):
@@ -328,7 +431,148 @@ class App:
         if path == '':
             return
 
+        self.update_dir_frame(path)
         self.settings.set_directory(path)
+
+
+    def set_win_size(self):
+        string = self.scale_get_win_size()
+        if string:
+            self.master.geometry(string)
+            self.settings.set_window_size(string)
+
+
+    def scale_get_win_size(self):
+        string_list = [None]
+        top_level = tk.Toplevel()
+        top_level.wm_attributes('-topmost', True)
+        top_level.title(_('m_set_win_size'))
+        xlabel=tk.Label(top_level, text = 'x')
+        ylabel=tk.Label(top_level, text = 'y')
+        scr_width = self.master.winfo_screenwidth()
+        scr_height = self.master.winfo_screenheight()
+        xscale=tk.Scale(top_level,from_=10,to=scr_width,resolution=1,tickinterval=300,length=400,orient='horizontal')
+        yscale=tk.Scale(top_level,from_=10,to=scr_height,resolution=1,tickinterval=300,length=400,orient='horizontal')
+
+        xscale.set(self.master.winfo_width())
+        yscale.set(self.master.winfo_height())
+
+        def _yes_destroy():
+            string_list[0] = str(xscale.get()) + 'x' + str(yscale.get())
+            top_level.destroy()
+        def _no_destroy():
+            top_level.destroy()
+
+            
+        yes_button = tk.Button(top_level, text = _('OK!'), command = _yes_destroy)
+        no_button = tk.Button(top_level, text = _('Cancel...'), command = _no_destroy)
+
+
+        xlabel.grid(row = 0, column = 0)
+        ylabel.grid(row = 1, column = 0)
+        xscale.grid(row = 0, column = 1)
+        yscale.grid(row = 1, column = 1)
+        yes_button.grid(row =0, column = 2)
+        no_button.grid(row =1, column = 2)
+        
+        top_level.protocol('WM_DELETE_WINDOW', _no_destroy)
+        top_level.wait_window()
+        return string_list[0]
+
+
+    def set_paned_ratio(self):
+        try:
+            string = tkSimpleDialog.askstring(_('Paned Windows Ratio'), _('Set ratio, all integers. Left:Right eg. 1:5'), initialvalue = self.settings.config.get('Paned Windows Ratio', 'ratio'))
+        except:# NoSectionError:
+            string = tkSimpleDialog.askstring(_('Paned Windows Ratio'), _('Set ratio, all integers. Left:Right eg. 1:5'))
+        if not string:
+            return
+        string = string.replace('：', ':')
+        self.settings.set_paned_ratio(string)
+        self.status.flash(10000, _('Restart to apply panedwindow changes.'))
+
+    def set_sidebar_max_lines(self):
+        try:
+            string = tkSimpleDialog.askstring(_('Set Sidebar Max Lines'), _('Sidebar max Lines(integer):'), initialvalue = self.settings.config.get('Set Sidebar Max Lines', 'lines'))
+        except:# NoSectionError:
+            string = tkSimpleDialog.askstring(_('Set Sidebar Max Lines'), _('Sidebar max Lines(integer):'))
+        if not string:
+            return
+        int(string)
+        self.settings.set_sidebar_max_lines(string)
+        self.update_dir_frame(self.browse_abspath)
+        
+    def set_contour_color(self):
+        if not hasattr(self, 'c'):
+            return
+        self.c.set_contour_color()
+
+    def set_text_color(self):
+        if not hasattr(self, 'c'):
+            return
+        self.c.set_text_color()
+
+    def set_resize_filter_type(self):
+        if not hasattr(self, 'c'):
+            return
+        self.c.set_resize_filter_type(self.resize_filter_type_int.get())
+
+    def set_min_max_zoomfactor(self):
+        if not hasattr(self, 'c'):
+            return
+        min_max = self.scale_get_min_max_zoomfactor()
+        if min_max:
+            self.c.set_min_max_zoomfactor(min_max)
+
+    def scale_get_min_max_zoomfactor(self):
+        min_max_list = [[]]
+        top_level = tk.Toplevel()
+        top_level.wm_attributes('-topmost', True)
+        top_level.title(_('m_set_min_max_zoomfactor'))
+        xlabel=tk.Label(top_level, text = _('min'))
+        ylabel=tk.Label(top_level, text = _('max'))
+
+        xscale=tk.Scale(top_level,from_=0.01,to=1,resolution=0.01,tickinterval=0.2,length=400,orient='horizontal')
+        yscale=tk.Scale(top_level,from_=1,to=20,resolution=1,tickinterval=5,length=400,orient='horizontal')
+
+        xscale.set(self.settings.get_min_max_zoomfactor()[0])
+        yscale.set(self.settings.get_min_max_zoomfactor()[1])
+
+        def _yes_destroy():
+            min_max_list[0] = [xscale.get(), yscale.get()]
+            top_level.destroy()
+        def _no_destroy():
+            top_level.destroy()
+
+            
+        yes_button = tk.Button(top_level, text = _('OK!'), command = _yes_destroy)
+        no_button = tk.Button(top_level, text = _('Cancel...'), command = _no_destroy)
+
+
+        xlabel.grid(row = 0, column = 0)
+        ylabel.grid(row = 1, column = 0)
+        xscale.grid(row = 0, column = 1)
+        yscale.grid(row = 1, column = 1)
+        yes_button.grid(row =0, column = 2)
+        no_button.grid(row =1, column = 2)
+        
+        top_level.protocol('WM_DELETE_WINDOW', _no_destroy)
+        top_level.wait_window()
+        return min_max_list[0]
+
+    def backup_ini(self):
+        tkMessageBox.showinfo(_('manually_backup'), _('ini_location'))
+        if 'Windows' == self._platform():
+            import ctypes
+            ctypes.windll.shell32.ShellExecuteW(None, u'open', u'explorer.exe', 
+                                    u'/n,/select, ' + 'settings.ini', None, 1)
+
+    def help(self):
+        tkMessageBox.showinfo('', _('user_guide'))
+
+
+    def contact(self):
+        tkMessageBox.showinfo('', _('contact'))
 
     def open_file(self, abspath = ''):
         """
@@ -471,6 +715,11 @@ class App:
             self.c._display_contours()
             self.c._display_text()
 
+    def measure_distance(self):
+        self.status.flash(2000, _('Press and drag the middle mouse button to start measuring.'))
+
+
+
     def convert_bmp(self):
         #c=showbox.nametowidget('show_canvas')
         if self.c.array == '':
@@ -498,8 +747,8 @@ class App:
 
             top_level = tk.Toplevel()
             top_level.wm_attributes('-topmost', True)
-            top_level.title('Choose an extension:')
-            label=tk.Label(top_level, text = 'Choose an extension:')
+            top_level.title(_('Choose an extension:'))
+            label=tk.Label(top_level, text = _('Choose an extension:'))
             label.pack()
             opt_menu = tk.OptionMenu(top_level, sv, *option_list)
             opt_menu.pack(side = 'top')
@@ -512,8 +761,8 @@ class App:
                 top_level.destroy()
                 
 
-            yes_button = tk.Button(top_level, text = 'OK!', command = _yes_destroy).pack(side = 'top')
-            no_button = tk.Button(top_level, text = 'Cancel...', command = _no_destroy).pack(side = 'top')
+            yes_button = tk.Button(top_level, text = _('OK!'), command = _yes_destroy).pack(side = 'top')
+            no_button = tk.Button(top_level, text = _('Cancel...'), command = _no_destroy).pack(side = 'top')
 
             top_level.protocol('WM_DELETE_WINDOW', _no_destroy)
 
@@ -657,6 +906,27 @@ class App:
             return
         self.c.on_zoom_1()
 
+    def zoom_in(self):
+        if self.c.array == '':
+            return
+        self.c.zoom_factor += 1
+        if self.c.zoom_factor > self.c.max_zoom_factor:
+            self.c.zoom_factor = self.c.max_zoom_factor
+        self.c._display()
+        self.c._zoom_changed_event_generate()
+        self.status.flash(2000, _('You can drag the left mouse button instead.'))
+
+    def zoom_out(self):
+        if self.c.array == '':
+            return
+        self.c.zoom_factor -= 0.5
+        if self.c.zoom_factor < self.c.min_zoom_factor:
+            self.c.zoom_factor = self.c.min_zoom_factor
+        self.c._display()
+        self.c._zoom_changed_event_generate()
+        self.status.flash(2000, _('You can drag the left mouse button instead.'))
+
+
     def rotate_left_90(self):
         if self.c.array == '':
             return
@@ -731,7 +1001,7 @@ class App:
     def _customize_window(self):
         self._show_icon()
         self.master.title(_('title'))
-        self.master.geometry('700x500')
+        self.master.geometry(self.settings.get_window_size())
         #zoom maximum window.
         #'''
         if 'Windows' == self._platform():
@@ -814,7 +1084,7 @@ class App:
 
 
             self.view_tags_menu = tk.Menu(self.view_menu, tearoff = 0)
-            self.view_menu.add_cascade(label = _('m_tags'), menu = self.view_tags_menu)
+            self.view_menu.add_cascade(label = _('m_tags'), menu = self.view_tags_menu, state = "disabled")
             self.tag_var1 = tk.BooleanVar()
             self.tag_var1.set(True)
             self.view_tags_menu.add_checkbutton(label = _('m_tag1'), onvalue = True, offvalue = False, variable = self.tag_var1)
@@ -827,8 +1097,8 @@ class App:
             self.view_menu.add_command(label = _('m_fit_win'), command = self.fit_window)
             self.view_menu.add_command(label = _('m_fit_wid'), command = self.fit_width)
             self.view_menu.add_command(label = _('m_fit_hei'), command = self.fit_height)
-            self.view_menu.add_command(label = _('m_zoom_in'), command = False)
-            self.view_menu.add_command(label = _('m_zoom_out'), command = False)
+            self.view_menu.add_command(label = _('m_zoom_in'), command = self.zoom_in)
+            self.view_menu.add_command(label = _('m_zoom_out'), command = self.zoom_out)
 
 
             self.view_menu.add_separator()
@@ -864,18 +1134,35 @@ class App:
             self.image_menu.add_command(label = _('m_ro_flip_default'), command = self.rotate_flip_default)
         #-------------------------------------------------------
         def _ROI_menu():
-            self.ROI_menu.add_command(label = _('ROI_dra_discription'), command = False)
             self.ROI_menu.add_command(label = _('m_save_ROIs'), command = self.save_ROI)
             self.ROI_menu.add_command(label = _('m_load_ROIs'), command = self.load_ROI)
         #-------------------------------------------------------
         def _measure_menu():
-            self.measure_menu.add_command(label = _('m_distance'), command = False, state = 'disabled')
+            self.measure_menu.add_command(label = _('m_distance'), command = self.measure_distance)
             self.measure_menu.add_command(label = _('m_size'), command = False, state = 'disabled')
             self.measure_menu.add_command(label = _('m_stat_in_ROI'), command = False, state = 'disabled')
         #-------------------------------------------------------
         def _setting_menu():
             self.settings_menu.add_cascade(label = _('m_change_language'), menu = self.help_lang_menu)
             self.settings_menu.add_command(label = _('m_set_dir'), command = self.set_dir)
+            self.settings_menu.add_command(label = _('m_set_win_size'), command = self.set_win_size)
+            self.settings_menu.add_command(label = _('m_set_paned_ratio'), command = self.set_paned_ratio)
+            self.settings_menu.add_command(label = _('m_set_sidebar_max_lines'), command = self.set_sidebar_max_lines)
+            self.settings_menu.add_command(label = _('m_set_contour_color'), command = self.set_contour_color)
+            self.settings_menu.add_command(label = _('m_set_text_color'), command = self.set_text_color)
+            
+            self.settings_filter_menu = tk.Menu(self.settings_menu, tearoff = 0)
+            self.settings_menu.add_cascade(label = _('m_resize_filter_type'), menu = self.settings_filter_menu)
+            self.resize_filter_type_int = tk.IntVar()
+            self.resize_filter_type_int.set(self.settings.get_resize_filter_type())
+            self.settings_filter_menu.add_radiobutton(label = _('m_NEAREST'), command =  self.set_resize_filter_type, variable = self.resize_filter_type_int, value = 0)
+            self.settings_filter_menu.add_radiobutton(label = _('m_ANTIALIAS'), command =  self.set_resize_filter_type, variable = self.resize_filter_type_int, value = 1)
+            self.settings_filter_menu.add_radiobutton(label = _('m_BILINEAR'), command =  self.set_resize_filter_type, variable = self.resize_filter_type_int, value = 2)
+            self.settings_filter_menu.add_radiobutton(label = _('m_BICUBIC'), command =  self.set_resize_filter_type, variable = self.resize_filter_type_int, value = 3)
+
+
+            self.settings_menu.add_command(label = _('m_set_min_max_zoomfactor'), command = self.set_min_max_zoomfactor)
+            self.settings_menu.add_command(label = _('m_backup_ini'), command = self.backup_ini)
 
 
 
@@ -890,8 +1177,8 @@ class App:
                 self.help_lang_menu.add_radiobutton(label = i, command = lambda i=i : self.set_lang(i), variable = self.lang_var, value = i)
 
 
-            self.help_menu.add_command(label = _('m_about'), command = False)
-            self.help_menu.add_command(label = _('m_contact_author'), command = False)
+            self.help_menu.add_command(label = _('m_about'), command = self.help)
+            self.help_menu.add_command(label = _('m_contact_author'), command = self.contact)
         #-------------------------------------------------------
         _file_menu()
         _edit_menu()
@@ -904,10 +1191,11 @@ class App:
 
         #############################################################
         #Deal with sidebar:
-        self.sidebar = tk.Frame(self.panedwindow)#, width = 80
+        self.sidebar = tk.Frame(self.panedwindow)
         self.showbox = tk.Frame(self.panedwindow, bg = 'black', name = 'showbox')
-        self.panedwindow.add(self.sidebar, weight = 1)
-        self.panedwindow.add(self.showbox, weight = 5)
+        weight_sidebar, weight_showbox = self.settings.get_paned_ratio()
+        self.panedwindow.add(self.sidebar, weight = weight_sidebar)
+        self.panedwindow.add(self.showbox, weight = weight_showbox)
 
         #-------------------------------------------------------
         self.dir_back_to_parent_folder_button = tk.Button(self.sidebar, text = '↑', command = self.back_to_parent_folder, relief='groove')
