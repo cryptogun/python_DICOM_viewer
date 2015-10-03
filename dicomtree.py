@@ -1,5 +1,9 @@
 # dicomtree.py
 """Show a dicom file using a hierarchical tree in a graphical window"""
+
+# PDV GUI.py use dicomtree.py to show all tags in a DICOM file.
+
+
 # Copyright (c) 2008-2012 Darcy Mason
 # This file is part of pydicom, relased under an MIT license.
 #    See the file license.txt included with this distribution, also

@@ -3,7 +3,8 @@
 A canvas derived from Tkinter.Canvas for MRI image display
 """
 import Tkinter
-from PIL import ImageTk, Image
+from PIL import ImageTk,Image
+#import ImageTk
 import tkSimpleDialog
 import tkMessageBox
 import dicom
@@ -11,118 +12,9 @@ import numpy
 
 import ConfigParser
 from tkColorChooser import askcolor
-class Settings:
-    """
-    Read configure info from settings.ini.
-    """
-    def __init__(self):
-        self._read_ini()
 
-    def _read_ini(self):
-        self.config = ConfigParser.ConfigParser()
-        try:
-            self.config.read('settings.ini')
-        except ConfigParser.MissingSectionHeaderError:
-            #BOM in utf-8 file.
-            from StringIO import StringIO
-            with open('settings.ini', 'rb') as f:
-                content = f.read().decode('utf-8-sig').encode('utf8')
-                self.config.readfp(StringIO(content))
+from settings import Settings
 
-    def get_contour_color(self):
-        """
-
-        """
-        try:
-            return self.config.get('Colors', 'contour color')
-        except:
-            return 'cyan'
-
-
-    def set_contour_color(self, string):
-        """
-
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Colors'):
-                self.config.add_section('Colors')
-            self.config.set('Colors', 'contour color', string.encode('utf-8'))
-            self.config.write(configfile)
-
-    def get_text_color(self):
-        """
-
-        """
-        try:
-            color = self.config.get('Colors', 'text color')
-            if color.startswith('#'):
-                return color
-            else:
-                return 'green'
-        except:
-            return 'green'
-
-
-    def set_text_color(self, string):
-        """
-
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Colors'):
-                self.config.add_section('Colors')
-            self.config.set('Colors', 'text color', string.encode('utf-8'))
-            self.config.write(configfile)
-
-    def get_resize_filter_type(self):
-        """
-
-        """
-        try:
-            type_int = int(self.config.get('Resize Filter Type', 'type'))
-            if type_int in (0, 1, 2, 3):
-                return type_int
-            else:
-                return 0
-        except:
-            return 0
-
-
-    def set_resize_filter_type(self, string):
-        """
-
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Resize Filter Type'):
-                self.config.add_section('Resize Filter Type')
-            self.config.set('Resize Filter Type', 'type', string.encode('utf-8'))
-            self.config.write(configfile)
-
-
-    def get_min_max_zoomfactor(self):
-        """
-
-        """
-        try:
-            min_max = self.config.get('Min Max Zoom Factor', 'min max').split(' ')
-            min_max = [float(i) for i in min_max]
-            return min_max
-        except:
-            return [0.05, 6.0]
-
-
-    def set_min_max_zoomfactor(self, string):
-        """
-
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Min Max Zoom Factor'):
-                self.config.add_section('Min Max Zoom Factor')
-            self.config.set('Min Max Zoom Factor', 'min max', string.encode('utf-8'))
-            self.config.write(configfile)
 
 class MRI_canvas(Tkinter.Canvas):
     """

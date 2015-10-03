@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 '''
 This is the languages package. You can add new language(s) as the form below.
-Use Opencc for tradictional Chinese converting.
+PS: Opencc used for tradictional Chinese converting.
 '''
 
 #Languages package table. Format: shorten meaning mark: meaning

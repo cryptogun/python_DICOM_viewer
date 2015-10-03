@@ -8,157 +8,14 @@ import tkFileDialog#pop up 'ask open file dialog'.
 import tkSimpleDialog#ask input ratio.
 
 import os#os name, seperator, isdir, listdir etc.
-import ConfigParser#read and save configure.
 import shutil#copy file.
 
 #import files.
 import languages#multi-language support.
 import MRI_canvas as Mc
 import MRI_sequence as Ms
+from settings import Settings
 
-class Settings:
-    """
-    Read configure info from settings.ini.
-    """
-    def __init__(self):
-        self._read_ini()
-
-    def _read_ini(self):
-        self.config = ConfigParser.ConfigParser()
-        try:
-            self.config.read('settings.ini')
-        except ConfigParser.MissingSectionHeaderError:
-            #BOM in utf-8 file.
-            from StringIO import StringIO
-            with open('settings.ini', 'rb') as f:
-                content = f.read().decode('utf-8-sig').encode('utf8')
-                self.config.readfp(StringIO(content))
-
-    def get_language(self):
-        try:
-            return self.config.get('Languages', 'language')
-        except:
-            return 'English'
-
-    def set_language(self, string):
-        """
-        Change interface language.
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Languages'):
-                self.config.add_section('Languages')
-            self.config.set('Languages', 'language', string.encode('utf-8'))
-            self.config.write(configfile)
-
-    def get_directory(self):
-        try:
-            return self.config.get('Initial Directory', 'directory')
-        except:
-            return '/'
-
-    def set_directory(self, string):
-        """
-        Set initial directory.
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Initial Directory'):
-                self.config.add_section('Initial Directory')
-            self.config.set('Initial Directory', 'directory', string.encode('utf-8'))
-            self.config.write(configfile)
-
-
-    def get_window_size(self):
-        """
-        Get window size.
-        """
-        try:
-            return self.config.get('Window Size', 'wxh')
-        except:
-            return '700x500'
-
-
-    def set_window_size(self, string):
-        """
-        Set initial directory.
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Window Size'):
-                self.config.add_section('Window Size')
-            self.config.set('Window Size', 'wxh', string.encode('utf-8'))
-            self.config.write(configfile)
-
-
-    def get_paned_ratio(self):
-        """
-
-        """
-        try:
-            string = self.config.get('Paned Windows Ratio', 'ratio').replace('：', ':')
-            return map(int, string.split(':'))
-        except:
-            return (1, 6)
-
-
-
-    def set_paned_ratio(self, string):
-        """
-
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Paned Windows Ratio'):
-                self.config.add_section('Paned Windows Ratio')
-            self.config.set('Paned Windows Ratio', 'ratio', string.encode('utf-8'))
-            self.config.write(configfile)
-
-
-    def get_sidebar_max_lines(self):
-        """
-
-        """
-        try:
-            return int(self.config.get('Sidebar Max Lines', 'lines'))
-        except:
-            return 29
-
-
-    def set_sidebar_max_lines(self, string):
-        """
-
-        """
-        string = string.decode('utf-8')
-        with open('settings.ini', 'w') as configfile:
-            if not self.config.has_section('Sidebar Max Lines'):
-                self.config.add_section('Sidebar Max Lines')
-            self.config.set('Sidebar Max Lines', 'lines', string.encode('utf-8'))
-            self.config.write(configfile)
-
-    def get_resize_filter_type(self):
-        """
-
-        """
-        try:
-            type_int = int(self.config.get('Resize Filter Type', 'type'))
-            if type_int in (0, 1, 2, 3):
-                return type_int
-            else:
-                return 0
-        except:
-            return 0
-
-    def get_min_max_zoomfactor(self):
-        """
-
-        """
-        try:
-            min_max = self.config.get('Min Max Zoom Factor', 'min max').split(' ')
-            min_max = [float(i) for i in min_max]
-            return min_max
-        except:
-            return [0.05, 6.0]
 
 settings = Settings()
 
@@ -175,7 +32,7 @@ def _(string):
 
 class StatusBar(tk.Frame):
     """
-    Status frame derived from tk.Frame. To show info. Can be set and clear.
+    Status frame derived from tk.Frame. To show info. MSGs can be set and clear.
     """
     def __init__(self, master):
         tk.Frame.__init__(self, master)
@@ -402,7 +259,12 @@ class App:
             if save:
                 self.save_ROI()
 
-        root.destroy()##todo
+        try:
+            root.destroy()##todo
+        except NameError:
+            #NameError: global name 'root' is not defined
+            #run from main.py where 'root' stays.
+            self.master.destroy()
 
     def _platform(self):
         if 'nt' == os.name:
