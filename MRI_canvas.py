@@ -4,13 +4,11 @@ A canvas derived from Tkinter.Canvas for MRI image display
 """
 import Tkinter
 from PIL import ImageTk,Image
-#import ImageTk
 import tkSimpleDialog
 import tkMessageBox
 import dicom
 import numpy
 
-import ConfigParser
 from tkColorChooser import askcolor
 
 from settings import Settings
